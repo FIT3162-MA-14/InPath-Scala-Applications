@@ -1,0 +1,90 @@
+version: "3"
+services:
+    zookeeper:
+        container_name: zookeeper
+        image: debezium/zookeeper
+        ports:
+            - "2181:2181"
+            - "2888:2888"
+            - "3888:3888"
+
+    kafka:
+        container_name: kafka
+        image: debezium/kafka
+        ports:
+            - "9092:9092"
+            - "29092:29092"
+        depends_on:
+            - zookeeper
+        environment:
+            - ZOOKEEPER_CONNECT=zookeeper:2181
+            - KAFKA_ADVERTISED_LISTENERS=LISTENER_EXT://localhost:29092,LISTENER_INT://kafka:9092
+            - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=LISTENER_INT:PLAINTEXT,LISTENER_EXT:PLAINTEXT
+            - KAFKA_LISTENERS=LISTENER_INT://0.0.0.0:9092,LISTENER_EXT://0.0.0.0:29092
+            - KAFKA_INTER_BROKER_LISTENER_NAME=LISTENER_INT
+
+    connect:
+        container_name: connect
+        image: debezium/connect
+        ports:
+            - "8083:8083"
+        environment:
+            - BOOTSTRAP_SERVERS=kafka:9092
+            - GROUP_ID=1
+            - CONFIG_STORAGE_TOPIC=my_connect_configs
+            - OFFSET_STORAGE_TOPIC=my_connect_offsets
+            - STATUS_STORAGE_TOPIC=my_connect_statuses
+        depends_on:
+            - zookeeper
+            - kafka
+
+    spark-master:
+        container_name: spark-master
+        image: adelineyaoy/spark-master
+        container_name: spark-master
+        ports:
+            - "8080:8080"
+            - "7077:7077"
+        environment:
+            - INIT_DAEMON_STEP=bde2020/mu-init-daemon-service:0.1.0
+        links:
+            - kafka
+        volumes:
+            - ./data:/opt/data
+
+    spark-worker-1:
+        image: adelineyaoy/spark-worker
+        container_name: spark-worker-1
+        depends_on:
+            - spark-master
+        ports:
+            - "8081:8081"
+        environment:
+            - "SPARK_MASTER=spark://spark-master:7077"
+
+    spark-worker-2:
+        image: adelineyaoy/spark-worker
+        container_name: spark-worker-2
+        depends_on:
+            - spark-master
+        ports:
+            - "8082:8081"
+        environment:
+            - "SPARK_MASTER=spark://spark-master:7077"
+
+    namenode:
+        image: adelineyaoy/hadoop-namenode
+        container_name: hadoop-namenode
+        volumes:
+            - ./data:/opt/data
+        environment:
+            - "CORE_CONF_fs_defaultFS=hdfs://namenode:9000"
+            - "CLUSTER_NAME=hadooptest"
+        ports:
+            - "9870:9870"
+            - "9000:9000"
+    datanode:
+        image: adelineyaoy/hadoop-datanode
+        container_name: hadoop-datanode
+        environment:
+            - "CORE_CONF_fs_defaultFS=hdfs://namenode:9000"
